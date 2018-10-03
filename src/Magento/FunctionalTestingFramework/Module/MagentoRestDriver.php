@@ -7,6 +7,7 @@
 namespace Magento\FunctionalTestingFramework\Module;
 
 use Codeception\Module\REST;
+use Magento\FunctionalTestingFramework\Exceptions\TestFrameworkException;
 use Magento\FunctionalTestingFramework\Module\MagentoSequence;
 use Magento\FunctionalTestingFramework\Util\ConfigSanitizerUtil;
 use Flow\JSONPath;
@@ -96,25 +97,31 @@ class MagentoRestDriver extends REST
      */
     public function _beforeSuite($settings = [])
     {
-        parent::_beforeSuite($settings);
-        if (empty($this->config['url']) || empty($this->config['username']) || empty($this->config['password'])) {
-            return;
+        try {
+            parent::_beforeSuite($settings);
+            if (empty($this->config['url']) || empty($this->config['username']) || empty($this->config['password'])) {
+                return;
+            }
+
+            $this->config = ConfigSanitizerUtil::sanitizeWebDriverConfig($this->config, ['url']);
+
+            $this->haveHttpHeader('Content-Type', 'application/json');
+            $this->sendPOST(
+                'integration/admin/token',
+                ['username' => $this->config['username'], 'password' => $this->config['password']]
+            );
+            $token = substr($this->grabResponse(), 1, strlen($this->grabResponse()) - 2);
+            $this->seeResponseCodeIs(\Codeception\Util\HttpCode::OK);
+            $this->haveHttpHeader('Authorization', 'Bearer ' . $token);
+            self::$adminTokens[$this->config['username']] = $token;
+            // @codingStandardsIgnoreStart
+            $this->getModule('\Magento\FunctionalTestingFramework\Module\MagentoSequence')->_initialize();
+            // @codingStandardsIgnoreEnd
+        } catch (\GuzzleHttp\Exception\ConnectException $e) {
+            throw new TestFrameworkException('Error connect by curl:' . PHP_EOL . $e->getMessage());
+        } catch (\Exception $e) {
+            throw new TestFrameworkException($e->getMessage());
         }
-
-        $this->config = ConfigSanitizerUtil::sanitizeWebDriverConfig($this->config, ['url']);
-
-        $this->haveHttpHeader('Content-Type', 'application/json');
-        $this->sendPOST(
-            'integration/admin/token',
-            ['username' => $this->config['username'], 'password' => $this->config['password']]
-        );
-        $token = substr($this->grabResponse(), 1, strlen($this->grabResponse())-2);
-        $this->seeResponseCodeIs(\Codeception\Util\HttpCode::OK);
-        $this->haveHttpHeader('Authorization', 'Bearer ' . $token);
-        self::$adminTokens[$this->config['username']] = $token;
-        // @codingStandardsIgnoreStart
-        $this->getModule('\Magento\FunctionalTestingFramework\Module\MagentoSequence')->_initialize();
-        // @codingStandardsIgnoreEnd
     }
 
     /**
